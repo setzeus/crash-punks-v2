@@ -192,7 +192,7 @@
       (current-id (var-get hypercard-index))
       (next-id (+ current-id u1))
       (is-punk-eligible-now (is-punk-eligible punk-id))
-      (punk-owner (unwrap-panic (contract-call? .crash-punks get-owner punk-id)))
+      (punk-owner (unwrap-panic (contract-call? .punks get-owner punk-id)))
     )
 
     ;; assert that stacculent is eligible

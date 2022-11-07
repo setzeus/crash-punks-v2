@@ -5,12 +5,6 @@ description = ""
 telemetry = false
 boot_contracts = ["pox", "costs-v2", "bns"]
 
-[[project.requirements]]
-contract_id = ".nft-trait"
-
-[[project.requirements]]
-contract_id = ".ft-trait"
-
 [project.cache_location]
 path = ".requirements"
 [contracts.commision-trait]

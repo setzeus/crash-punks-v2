@@ -159,9 +159,6 @@
   (ok (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: (contract-of collection)})))
 )
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Staked Details By Collection & ID ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; @desc - Read function that returns stake details (staker, status, last-staked-or-claimed) in a specific collection & id
 (define-read-only (get-stake-details (collection principal) (item-id uint))
   (ok
@@ -171,12 +168,155 @@
     )
 )
 
+;; @desc - Read function that returns the tx-sender's total unclaimed balance across all whitelisted collections
+(define-public (get-unclaimed-balance)
+  (let
+    (
+      ;; Filter from (list principal) of all whitelist principals/NFTs to (list principal) of all whitelist principals/NFTs where user has > 0 stakes
+      (this-collection-stakes-by-user (filter filter-out-collections-with-no-stakes (var-get whitelist-collections)))
+      (list-of-height-differences (list))
+    )
+
+    ;; 1. Filter from whitelisted to active staked
+    ;; 2. Map from a list of principals to a list of uints
+
+    ;; clear temporary unclaimed balance uint
+    (var-set helper-total-unclaimed-balance u0)
+
+    ;; map through this-collection-stakes-by-user, don't care about output list, care about appending to list-of-height-differences
+    (map map-to-append-to-list-of-height-differences this-collection-stakes-by-user)
+
+    ;; return unclaimed balance from tx-sender
+    (ok (var-get helper-total-unclaimed-balance))
+  )
+)
+
+;; @desc - looping through all the collections that a user *does* have active stakes, goal of this function is to append the unclaimed balance from each collection to a new list (helper-height-difference)
+(define-private (map-to-append-to-list-of-height-differences (collection principal))
+  (let
+    (
+      (this-collection-multiplier (default-to u0 (map-get? collection-multiplier collection)))
+      (this-collection-stakes-by-user (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: collection})))
+      (this-collection-multiplier-normalized (/ (* this-collection-multiplier (var-get max-payout-per-block)) u100))
+    )
+
+    ;; set helper list to empty
+    (var-set helper-height-difference-list (list))
+
+    ;; Set collection helper var for folding through height differences
+    (var-set helper-collection-principal collection)
+
+    ;; Use map as a loop to append helper list with get-unclaimed-balance-by-collection
+    (map append-helper-list-from-id-staked-to-height-difference this-collection-stakes-by-user)
+
+    ;; Total unclaimed balance in collection
+    (var-set helper-total-unclaimed-balance
+      (+
+        (var-get helper-total-unclaimed-balance)
+        (* this-collection-multiplier-normalized (fold + (var-get helper-height-difference-list) u0))
+      )
+    )
+
+    tx-sender
+  )
+)
+
+;; @desc - function to append the height-difference
+(define-private (append-helper-list-from-id-staked-to-height-difference (staked-id uint))
+  (let
+    (
+      (staked-or-claimed-height (get last-staked-or-claimed (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (var-get helper-collection-principal), id: staked-id}))))
+      (height-difference (- block-height staked-or-claimed-height))
+    )
+
+    (var-set helper-height-difference-list
+      (unwrap! (as-max-len? (append (var-get helper-height-difference-list) height-difference) u1000) u0)
+    )
+    u1
+  )
+)
+
+;; @desc - Read function that outputs a tx-sender total unclaimed balance from a specific collection
+(define-public (get-unclaimed-balance-by-collection (collection <nft-trait>))
+  (let
+    (
+      (this-collection-multiplier (unwrap! (map-get? collection-multiplier (contract-of collection)) (err u0)))
+      (this-collection-stakes-by-user (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: (contract-of collection)})))
+      (list-of-staked-height-differences (map map-from-id-staked-to-height-difference this-collection-stakes-by-user))
+      (this-collection-multiplier-normalized (/ (* this-collection-multiplier (var-get max-payout-per-block)) u100))
+    )
+
+      ;; Assert at least one stake exists
+      (asserts! (and (> (len this-collection-stakes-by-user) u0) (> (len list-of-staked-height-differences) u0)) (err u0))
+
+      ;; Var-set helper-collection-principal for use in map-from-id-staked-to-height-difference
+      (var-set helper-collection-principal (contract-of collection))
+
+      ;; Unclaimed $SNOW balance by user in this collection
+      ;; Fold to aggregate total blocks staked across all IDs, then multiply collection multiplier
+      (ok (* this-collection-multiplier-normalized (fold + list-of-staked-height-differences u0)))
+  )
+)
+
+;; @desc - Helper function used to map from a list of uint of staked ids to a list of uint of height-differences
+(define-private (map-from-id-staked-to-height-difference (staked-id uint))
+  (let
+    (
+      (staked-or-claimed-height (get last-staked-or-claimed (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (var-get helper-collection-principal), id: staked-id}))))
+    )
+    (print (- block-height staked-or-claimed-height))
+    (- block-height staked-or-claimed-height)
+  )
+)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;; Stake Functions ;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define-public (stake (collection <nft-trait>) (id uint))
+  (let
+    (
+      (current-all-staked-in-collection-list (default-to (list) (map-get? all-stakes-in-collection (contract-of collection))))
+      (is-unstaked-in-all-staked-ids-list (index-of current-all-staked-in-collection-list id))
+      (is-unstaked-in-staked-by-user-list (index-of (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: (contract-of collection)})) id))
+      (is-unstaked-in-stake-details-map (get status (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (var-get helper-collection-principal), id: id}))))
+      (current-nft-owner (unwrap-panic (contract-call? collection get-owner id)))
+    )
+
+    ;; Assert collection is whitelisted
+    (asserts! (is-some (index-of (var-get whitelist-collections) (contract-of collection))) ERR-NOT-WHITELISTED)
+
+    ;; Assert caller is current owner of NFT
+    (asserts! (is-eq (some tx-sender) current-nft-owner) ERR-NOT-OWNER)
+
+    ;; Asserts item is unstaked across all necessary storage
+    (asserts! (and (is-none is-unstaked-in-all-staked-ids-list) (is-none is-unstaked-in-staked-by-user-list) (not is-unstaked-in-stake-details-map)) ERR-STAKED-OR-NONE)
+
+    ;; need to take care of manual staking for stacculents & spooky staccs
+
+
+    ;; Var set all staked ids list
+    (map-set all-stakes-in-collection (contract-of collection)
+      (unwrap! (as-max-len? (append (default-to (list) (map-get? all-stakes-in-collection (contract-of collection))) id) u10000) ERR-UNWRAP)
+    )
+
+    ;; Map set user staked in collection list
+    (map-set user-stakes-by-collection {user: tx-sender, collection: (contract-of collection)}
+        (unwrap! (as-max-len? (append (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: (contract-of collection)})) id) u10000) ERR-UNWRAP)
+    )
+
+    ;; Map set staked-item details
+    (ok (map-set staked-item {collection: (contract-of collection), id: id}
+      {
+        staker: tx-sender,
+        status: true,
+        last-staked-or-claimed: block-height
+      }
+    ))
+  )
+)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -185,6 +325,114 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; @desc - Function that a user calls to claim any generated stake rewards for a specific collection & specific id
+(define-public (claim-item-stake (collection-collective <nft-trait>) (staked-id uint))
+  (let
+    (
+      (this-collection-multiplier (default-to u0 (map-get? collection-multiplier (contract-of collection-collective))))
+      (this-collection-multiplier-normalized (/ (* this-collection-multiplier (var-get max-payout-per-block)) u100))
+      (current-staker (get staker (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (contract-of collection-collective), id: staked-id}))))
+      (stake-status (get status (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (contract-of collection-collective), id: staked-id}))))
+      (last-claimed-or-staked-height (get last-staked-or-claimed (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (contract-of collection-collective), id: staked-id}))))
+      (current-nft-owner (unwrap! (contract-call? collection-collective get-owner staked-id) ERR-NOT-AUTH))
+      (blocks-staked (- block-height last-claimed-or-staked-height))
+    )
+
+    ;; assert collection-collective is active/whitelisted
+    (asserts! (is-some (index-of (var-get whitelist-collections) (contract-of collection-collective))) ERR-NOT-WHITELISTED)                                     
+
+    ;; asserts is staked
+    (asserts! stake-status ERR-NOT-STAKED)
+
+    ;; asserts tx-sender is owner && asserts tx-sender is staker
+    (asserts! (and (is-eq tx-sender current-staker) (is-eq (some tx-sender) current-nft-owner)) ERR-NOT-OWNER)
+
+    ;; asserts height-difference > 0
+    (asserts! (> blocks-staked u0) ERR-MIN-STAKE-HEIGHT)
+
+    ;; contract call to mint for X amount
+    (unwrap! (contract-call? .snow mint (* this-collection-multiplier-normalized blocks-staked) tx-sender) ERR-UNWRAP)
+
+    ;; update last-staked-or-claimed height
+    (ok (map-set staked-item {collection: (contract-of collection-collective), id: staked-id}
+      {
+        status: true,
+        last-staked-or-claimed: block-height,
+        staker: tx-sender
+      }
+    ))
+  )
+)
+
+;; @desc - Function that a user calls to claim any generated stake rewards for a specific collection
+(define-public (claim-collection-stake (collection-collective <nft-trait>))
+  (let
+    (
+      (unclaimed-balance-by-collection (unwrap! (get-unclaimed-balance-by-collection collection-collective) ERR-UNWRAP))
+    )
+
+    ;; contract call to mint for X amount
+    (unwrap! (contract-call? .snow mint unclaimed-balance-by-collection tx-sender) ERR-UNWRAP)
+
+    ;; Set collection helper var for folding through height differences
+    (var-set helper-collection-principal (contract-of collection-collective))
+
+    ;; need to update last-staked-or-claimed from every ID just claimed...
+    ;; map from ID staked, don't care of output just update all stake details
+    (ok (map map-to-reset-all-ids-staked-by-user-in-this-collection (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: (contract-of collection-collective)}))))
+  )
+)
+
+(define-private (map-to-reset-all-ids-staked-by-user-in-this-collection (staked-id uint))
+  (begin
+    (map-set staked-item {collection: (var-get helper-collection-principal), id: staked-id}
+      (merge
+        (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (var-get helper-collection-principal), id: staked-id}))
+        {last-staked-or-claimed: block-height}
+      )
+    )
+    u1
+  )
+)
+
+;; @desc -Function that a user calls to stake any current or future SGC asset for $SNOW
+;; @param - Collection (principal or collection?), ID (uint) -> bool?
+(define-public (claim-all-stake)
+  (let
+    (
+      (list-of-collections-with-active-user-stakes (filter filter-out-collections-with-no-stakes (var-get whitelist-collections)))
+      (unclaimed-balance-total (unwrap! (get-unclaimed-balance) ERR-UNWRAP))
+    )
+
+    ;; contract call to mint for X amount
+    (unwrap! (contract-call? .snow mint unclaimed-balance-total tx-sender) ERR-UNWRAP)
+
+    ;; loop through collections, then through IDs, reset last-staked-or-claimed value for each staked ID in each collection by user
+    (ok (map map-to-loop-through-active-collection list-of-collections-with-active-user-stakes))
+  )
+)
+
+(define-private (map-to-loop-through-active-collection (collection principal))
+  (let
+    (
+      (collection-staked-by-user-list (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: collection})))
+    )
+      (map map-to-set-reset-last-claimed-or-staked-height collection-staked-by-user-list)
+      tx-sender
+  )
+)
+
+(define-private (map-to-set-reset-last-claimed-or-staked-height (staked-id uint))
+  (begin
+    (map-set staked-item {collection: (var-get helper-collection-principal), id: staked-id}
+      (merge
+        (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (var-get helper-collection-principal), id: staked-id}))
+        {last-staked-or-claimed: block-height}
+      )
+    )
+    u0
+  )
+)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -193,10 +441,199 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define-public (unstake-item (collection <nft-trait>) (staked-id uint))
+  (let
+    (
+      (this-collection-multiplier (default-to u0 (map-get? collection-multiplier (contract-of collection))))
+      (this-collection-multiplier-normalized (/ (* this-collection-multiplier (var-get max-payout-per-block)) u100))
+      (current-staker (get staker (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (contract-of collection), id: staked-id}))))
+      (stake-status (get status (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (contract-of collection), id: staked-id}))))
+      (last-claimed-or-staked-height (get last-staked-or-claimed (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (contract-of collection), id: staked-id}))))
+      (current-nft-owner (unwrap! (contract-call? collection get-owner staked-id) ERR-NOT-AUTH))
+      (blocks-staked (- block-height last-claimed-or-staked-height))
+      (current-all-staked-in-collection-list (default-to (list) (map-get? all-stakes-in-collection (contract-of collection))))
+      (current-user-staked-by-collection-list (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: (contract-of collection)})))
+    )
 
+    ;; asserts is staked
+    (asserts! stake-status ERR-NOT-STAKED)
+
+    ;; asserts tx-sender is owner && asserts tx-sender is staker
+    (asserts! (and (is-eq tx-sender current-staker) (is-eq (some tx-sender) current-nft-owner)) ERR-NOT-OWNER)
+
+    ;; check if blocks-staked > 0 to see if there's any unclaimed $SNOW to claim
+    (if (> blocks-staked u0)
+
+      ;; if there is, need to claim unstaked
+      (unwrap! (contract-call? .snow mint (* this-collection-multiplier-normalized blocks-staked) tx-sender) ERR-UNWRAP)
+
+      ;; if not, proceed
+      true
+    )
+
+    ;; Set helper id for removal in filters below
+    (var-set id-being-removed staked-id)
+
+    ;; filter/remove staked-id from all-stakes-in-collection
+    (map-set all-stakes-in-collection (contract-of collection) (filter is-not-id current-all-staked-in-collection-list))
+
+    ;; filter/remove staked-id from user-stakes-by-collection
+    (map-set user-stakes-by-collection {user: tx-sender, collection: (contract-of collection)} (filter is-not-id current-user-staked-by-collection-list))
+
+    ;; update last-staked-or-claimed height
+    (ok (map-set staked-item {collection: (contract-of collection), id: staked-id}
+      {
+        status: false,
+        last-staked-or-claimed: block-height,
+        staker: tx-sender
+      }
+    ))
+  )
+)
+
+(define-private (is-not-id (list-id uint))
+  (not (is-eq list-id (var-get id-being-removed)))
+)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;; Admin Functions ;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; @desc - Function that only an admin user can call to add a new SGC collection for staking
+;; @param - Collection (principal or collection?), Collection-Multiple (uint)
+(define-public (admin-add-new-collection (collection <nft-trait>) (collection-multiple uint))
+  (let
+    (
+      (active-whitelist (var-get whitelist-collections))
+    )
+
+    ;;(asserts! (is-some (index-of (var-get whitelist-admins) tx-sender)) (err u40))
+    (asserts! (is-eq tx-sender admin-one) ERR-NOT-AUTH)
+
+    ;; assert collection not already added
+    (asserts! (is-none (index-of active-whitelist (contract-of collection))) ERR-ALREADY-WHITELISTED)
+
+    ;; assert multiple < 100
+    (asserts! (and (< collection-multiple u101) (> collection-multiple u0)) ERR-MULTIPLIER)
+
+    ;; update collection-multiplier map
+    (map-set collection-multiplier (contract-of collection) collection-multiple)
+
+    ;; add new principle to whitelist
+    (ok (var-set whitelist-collections (unwrap! (as-max-len? (append active-whitelist (contract-of collection)) u100) ERR-UNWRAP) ))
+
+  )
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Add Admin Address For Whitelisting ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; @desc - Function for add principals that have explicit permission to add current or future stakeable collections
+;; @param - Principal that we're adding as whitelist, initially only admin-one has permission
+(define-public (add-admin-address-for-whitelisting (new-whitelist principal))
+  (let
+    (
+      (current-admin-list (var-get whitelist-admins))
+      (caller-principal-position-in-list (index-of current-admin-list tx-sender))
+      (param-principal-position-in-list (index-of current-admin-list new-whitelist))
+    )
+
+    ;; asserts tx-sender is an existing whitelist address
+    ;; right now admin-one isn't in this list 
+    (asserts! (or (is-some caller-principal-position-in-list) (is-eq tx-sender admin-one)) ERR-NOT-AUTH)
+
+    ;; asserts param principal (new whitelist) doesn't already exist
+    (asserts! (is-none param-principal-position-in-list) ERR-ALREADY-WHITELISTED)
+
+    ;; append new whitelist address
+    (ok (as-max-len? (append (var-get whitelist-admins) new-whitelist) u100))
+  )
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Remove Admin Address For Whitelisting ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; @desc - Function for removing principals that have explicit permission to add current or future stakeable collections
+;; @param - Principal that we're adding removing as white
+(define-public (remove-admin-address-for-whitelisting (remove-whitelist principal))
+  (let
+    (
+      (current-admin-list (var-get whitelist-admins))
+      (caller-principal-position-in-list (index-of current-admin-list tx-sender))
+      (removeable-principal-position-in-list (index-of current-admin-list remove-whitelist))
+    )
+
+    ;; asserts tx-sender is an existing whitelist address
+    (asserts! (is-eq admin-one) ERR-NOT-AUTH)
+
+    ;; asserts param principal (removeable whitelist) already exist
+    (asserts! (is-eq removeable-principal-position-in-list) ERR-NOT-WHITELISTED) ;;changed error to make sense, changed is-some to is-eq
+
+    ;; temporary var set to help remove param principal
+    (var-set helper-collection-principal remove-whitelist)
+
+    ;; filter existing whitelist address
+    (ok (filter is-not-removeable (var-get whitelist-admins)))
+  )
+)
+
+;; @desc - Helper function for removing a specific admin from tne admin whitelist
+(define-private (is-not-removeable (admin-principal principal))
+  (not (is-eq admin-principal (var-get helper-collection-principal)))
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Admin Manual Unstake ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; @desc - Function for emergency un-staking all manually custodied assets (Stacculents or Spookies)
+;; @param - Principal of collection we're removing, ID of item we're manually unstaking & returning to user
+(define-public (admin-emergency-unstake (collection <nft-trait>) (id uint)) 
+  (let 
+    (
+      (this-collection-multiplier (default-to u0 (map-get? collection-multiplier (contract-of collection))))
+      (this-collection-multiplier-normalized (/ (* this-collection-multiplier (var-get max-payout-per-block)) u100))
+      (original-owner (get staker (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (contract-of collection), id: id}))))
+      (last-claimed-or-staked-height (get last-staked-or-claimed (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (contract-of collection), id: id}))))
+      (stake-status (get status (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (contract-of collection), id: id}))))
+      (current-owner (unwrap! (contract-call? collection get-owner id) ERR-NOT-AUTH))
+      (blocks-staked (- block-height last-claimed-or-staked-height))
+    ) 
+    
+    ;; asserts that collection is either Stacculents or Spooky Stacculents
+    (asserts! (is-eq (contract-of collection) punk-principal) ERR-NOT-WHITELISTED)
+
+    ;; asserts that item is actively staked
+    (asserts! stake-status ERR-NOT-STAKED)
+
+    ;; asserts that contract is current owner & that staker/original owner is *not* contract
+    (asserts! (and (is-eq (some (as-contract tx-sender)) current-owner) (not (is-eq (as-contract  tx-sender) original-owner))) ERR-NOT-OWNER)
+
+    ;; check for any owed generated rewards
+    (if (> blocks-staked u0) 
+      (unwrap! (contract-call? .snow mint (* this-collection-multiplier-normalized blocks-staked) tx-sender) ERR-UNWRAP)
+      true
+    )
+
+    ;; unstake item 
+
+    ;; send item back to original owner
+    (ok true)
+  )
+)
+
+;; @desc - Function that only an admin user can call to add a new SGC collection for staking
+;; @param - Collection (principal or collection?), Collection-Multiple (uint)
+(define-private (get-token-max-supply)
+  (match (var-get token-max-supply)
+    returnTokenMaxSupply returnTokenMaxSupply
+    (let
+      (
+        (new-token-max-supply (unwrap! (contract-call? .snow get-max-supply) u0))
+      )
+      (var-set token-max-supply (some new-token-max-supply))
+      new-token-max-supply
+    )
+  )
+)
