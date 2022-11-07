@@ -5,7 +5,7 @@
 ;; $SNOW FT Unique Properties
 ;; 1. Minting should only be allowed by the staking.clar contract=
 
-(impl-trait .sip-010-trait.sip-010-trait)
+(impl-trait .ft-trait.sip-010-trait)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;

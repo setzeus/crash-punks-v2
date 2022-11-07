@@ -3,7 +3,7 @@
 ;; Written by Cyb-Pato/Setzeus from StrataLabs
 
 ;; Digital Avatar NFT Unique Properties
-;; 1. 1 redeemable per 1 CrashPunk owed (can only be claimed a single time)
+;; 1. 1 redeemable per 1 CrashPunk owned (can only be claimed a single time)
 ;; 2. It's stakeable for $SNOW (at a rate per block tbd)
 ;; 3. The head/torso/legs will be overlaid with Clothes (another derivative NFT collection -> hardware-top-example)
 
