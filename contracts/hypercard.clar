@@ -69,6 +69,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define-read-only (is-punk-eligible (punk uint))
+  (default-to true (map-get? punk-claimed punk))
+)
+
 (define-read-only (get-last-token-id)
   (ok (var-get hypercard-index))
 )
@@ -77,25 +81,25 @@
   (ok (nft-get-owner? hypercard id))
 )
 
-;;(define-read-only (get-token-uri (token-id uint))
-  ;;(ok
-    ;;(some
-      ;;(concat
-        ;;(concat
-          ;;ipfs-root
-          ;;(uint-to-ascii token-id)
-        ;;)
-        ;;".json"
-      ;;)
-    ;;)
-  ;;)
-;;)
+(define-read-only (get-token-uri (token-id uint))
+  (ok
+    (some
+      (concat
+        (concat
+          ipfs-root
+          (uint-to-ascii token-id)
+        )
+        ".json"
+      )
+    )
+  )
+)
 
 (define-public (transfer (id uint) (sender principal) (recipient principal))
   (begin
     (asserts! (is-eq tx-sender sender) ERR-NOT-AUTH)
     ;; asserts not actively staked
-    (asserts! (not (get status (unwrap! (contract-call? .staking get-stake-details (as-contract tx-sender) id) ERR-UNWRAP))) ERR-STAKED)
+    (asserts! (not (get status (unwrap! (contract-call? .staking get-stake-details (as-contract tx-sender) id) ERR-UNWRAP-STAKE-STATUS))) ERR-CURRENTLY-STAKED)
     (nft-transfer? hypercard id sender recipient)
   )
 )
@@ -106,7 +110,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(use-trait commission-trait .commision-trait.commision)
+(use-trait commission-trait .commision-trait.commission)
 
 ;; @desc gets market listing by market list ID
 ;; @param id; the ID of the market listing
@@ -134,7 +138,7 @@
     )
 
     ;; asserts not actively staked
-    (asserts! (not (get status (unwrap! (contract-call? .staking get-stake-details (as-contract tx-sender) id) ERR-UNWRAP))) ERR-STAKED)
+    (asserts! (not (get status (unwrap! (contract-call? .staking get-stake-details (as-contract tx-sender) id) ERR-UNWRAP-STAKE-STATUS))) ERR-CURRENTLY-STAKED)
 
     (asserts! (is-sender-owner id) ERR-NOT-AUTH)
     (map-set market id listing)
@@ -212,5 +216,34 @@
 
     ;; map-set punk-claimed to false
     (ok (map-set punk-claimed punk-id false))
+  )
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;; Help Functions ;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; @desc utility function that takes in a unit & returns a string
+;; @param value; the unit we're casting into a string to concatenate
+;; thanks to Lnow for the guidance
+(define-read-only (uint-to-ascii (value uint))
+  (if (<= value u9)
+    (unwrap-panic (element-at "0123456789" value))
+    (get r (fold uint-to-ascii-inner
+      0x000000000000000000000000000000000000000000000000000000000000000000000000000000
+      {v: value, r: ""}
+    ))
+  )
+)
+
+(define-read-only (uint-to-ascii-inner (i (buff 1)) (d {v: uint, r: (string-ascii 39)}))
+  (if (> (get v d) u0)
+    {
+      v: (/ (get v d) u10),
+      r: (unwrap-panic (as-max-len? (concat (unwrap-panic (element-at "0123456789" (mod (get v d) u10))) (get r d)) u39))
+    }
+    d
   )
 )
