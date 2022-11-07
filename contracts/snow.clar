@@ -25,7 +25,6 @@
 ;;;;;;;;;;;;;;;;;;;
 
 (define-fungible-token snow TOKEN_MAX_SUPPLY)
-(define-data-var is-transfer-active bool false)
 
 ;;;;;;;;;;;;;;;;
 ;; Error Cons ;;
