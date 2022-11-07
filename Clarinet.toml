@@ -23,6 +23,12 @@ path = "contracts/snow.clar"
 [contracts.staking]
 path = "contracts/staking.clar"
 
+[contracts.sip-010-trait]
+path = "contracts/sip-010-trait.clar"
+
+[contracts.sip-090-trait]
+path = "contracts/sip-090-trait-nft.clar"
+
 [repl]
 costs_version = 2
 parser_version = 2
