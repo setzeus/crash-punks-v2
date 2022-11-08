@@ -7,8 +7,8 @@ boot_contracts = ["pox", "costs-v2", "bns"]
 
 [project.cache_location]
 path = ".requirements"
-[contracts.commision-trait]
-path = "contracts/commision-trait.clar"
+[contracts.commission-trait]
+path = "contracts/commission-trait.clar"
 
 [contracts.digital-avatar]
 path = "contracts/digital-avatar.clar"

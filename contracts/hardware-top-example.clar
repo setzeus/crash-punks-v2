@@ -89,7 +89,7 @@
 
 ;; @desc commission trait, needs to be implemented client-side
 ;; @param 1 func "pay" with two inputs & one response
-(use-trait commission-trait .commision-trait.commission)
+(use-trait commission-trait .commission-trait.commission)
 
 ;; @desc gets market listing by market list ID
 ;; @param id; the ID of the market listing

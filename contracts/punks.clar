@@ -3,7 +3,7 @@
 (impl-trait .operable.operable)
 
 ;; TODO: either deploy it on admin address, or use an existing mainnet one
-(use-trait commission-trait .commision-trait.commission)
+(use-trait commission-trait .commission-trait.commission)
 
 ;; contract variables
 

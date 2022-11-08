@@ -110,7 +110,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(use-trait commission-trait .commision-trait.commission)
+(use-trait commission-trait .commission-trait.commission)
 
 ;; @desc gets market listing by market list ID
 ;; @param id; the ID of the market listing
