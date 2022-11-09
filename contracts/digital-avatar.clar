@@ -247,7 +247,6 @@
     (ok 
       (map-set punk-claimed punk-id false)
     )
-
   )
 )
 
@@ -272,7 +271,7 @@
      (asserts! (is-some (index-of (var-get clothe-collections) new-head-collection)) ERR-NOT-DRESSING)
       
       ;;sets the map for the avatar
-      (ok 
+    (ok (map-set clothes avatar 
           (merge 
             current-avatar-clothes
             {
@@ -280,7 +279,7 @@
                 head-collection: new-head-collection,
             }
           )
-      )
+    ))
     )
 )
 
