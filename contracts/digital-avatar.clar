@@ -58,14 +58,14 @@
 ;; Map that keeps track of interchangeable NFTs by digital-avatar ID/uint
   (define-map clothes uint
   {
-    head-id: uint,
-    head-collection: principal,
+    head-id: (optional uint),
+    head-collection: (optional principal),
 
-    torso-id: uint,
-    torso-collection: principal,
+    torso-id: (optional uint),
+    torso-collection: (optional principal),
 
-    legs-id: uint,
-    legs-collection: principal,
+    legs-id: (optional uint),
+    legs-collection: (optional principal),
   }
 )
 
@@ -243,10 +243,21 @@
     ;; updated index
     (var-set digital-avatar-index next-id)
 
-    ;; map-set punk-claimed to false
-    (ok 
+    ;; map-set punk-claimed to false 
       (map-set punk-claimed punk-id false)
-    )
+
+    (ok (map-set clothes current-id
+        {
+            head-id: none,
+            head-collection: none,
+
+            torso-id: none,
+            torso-collection: none,
+
+            legs-id: none,
+            legs-collection: none,
+        }
+    ))
   )
 )
 
@@ -255,7 +266,7 @@
 ;;;;;; Clothes Functions ;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(define-public (change-avatar-head (avatar uint) (new-head-collection principal) (new-head uint))
+(define-public (change-avatar-head (avatar uint) (new-head-collection (optional principal)) (new-head (optional uint)))
     (let
      
      (
@@ -265,13 +276,13 @@
      (asserts! (is-eq (some tx-sender) (unwrap! (get-owner avatar) ERR-UNWRAP-AVATAR)) ERR-NOT-AUTH)
 
      ;; asserts the owner of the Head
-     (asserts! (is-eq (some tx-sender) (unwrap-panic (contract-call? .hardware-top-example get-owner new-head))) ERR-NOT-HEAD-OWNER)
+     (asserts! (is-eq (some tx-sender) (unwrap-panic (contract-call? .hardware-top-example get-owner (unwrap-panic new-head)))) ERR-NOT-HEAD-OWNER)
      
      ;; asserts that the collection can be used to dress
-     (asserts! (is-some (index-of (var-get clothe-collections) new-head-collection)) ERR-NOT-DRESSING)
+     (asserts! (is-some (index-of (var-get clothe-collections) (unwrap-panic new-head-collection))) ERR-NOT-DRESSING)
       
       ;;sets the map for the avatar
-    (ok (map-set clothes avatar 
+    (ok (map-set clothes avatar
           (merge 
             current-avatar-clothes
             {
@@ -279,7 +290,8 @@
                 head-collection: new-head-collection,
             }
           )
-    ))
+        )
+    )
     )
 )
 
