@@ -56,10 +56,16 @@
 )
 
 ;; Map that keeps track of interchangeable NFTs by digital-avatar ID/uint
-(define-map head uint
+  (define-map clothes uint
   {
     head-id: uint,
     head-collection: principal,
+
+    torso-id: uint,
+    torso-collection: principal,
+
+    legs-id: uint,
+    legs-collection: principal,
   }
 )
 
@@ -82,6 +88,7 @@
 (define-constant ERR-ALREADY-DRESSING (err u113))
 (define-constant ERR-NOT-DRESSING (err u114))
 (define-constant ERR-NOT-HEAD-OWNER (err u115))
+(define-constant ERR-UNWRAP-AVATAR (err u116))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -200,8 +207,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-read-only (get-head (digital-avatar-id uint))
-  (map-get? head digital-avatar-id)
+(define-read-only (get-clothes (digital-avatar-id uint))
+  (map-get? clothes digital-avatar-id)
 )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -237,7 +244,10 @@
     (var-set digital-avatar-index next-id)
 
     ;; map-set punk-claimed to false
-    (ok (map-set punk-claimed punk-id false))
+    (ok 
+      (map-set punk-claimed punk-id false)
+    )
+
   )
 )
 
@@ -247,10 +257,13 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-public (change-avatar-head (avatar uint) (new-head-collection principal) (new-head uint))
-    (begin 
+    (let
      
+     (
+      (current-avatar-clothes (unwrap! (map-get? clothes avatar) ERR-UNWRAP))
+     )
      ;; asserts the owner of the avatar
-     (asserts! (is-eq (some tx-sender) (unwrap! (get-owner avatar) ERR-UNWRAP)) ERR-NOT-AUTH)
+     (asserts! (is-eq (some tx-sender) (unwrap! (get-owner avatar) ERR-UNWRAP-AVATAR)) ERR-NOT-AUTH)
 
      ;; asserts the owner of the Head
      (asserts! (is-eq (some tx-sender) (unwrap-panic (contract-call? .hardware-top-example get-owner new-head))) ERR-NOT-HEAD-OWNER)
@@ -260,12 +273,13 @@
       
       ;;sets the map for the avatar
       (ok 
-        (map-set head avatar 
+          (merge 
+            current-avatar-clothes
             {
                 head-id: new-head,
-                head-collection: new-head-collection
+                head-collection: new-head-collection,
             }
-        )
+          )
       )
     )
 )
