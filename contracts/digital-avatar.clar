@@ -89,6 +89,8 @@
 (define-constant ERR-NOT-DRESSING (err u114))
 (define-constant ERR-NOT-HEAD-OWNER (err u115))
 (define-constant ERR-UNWRAP-AVATAR (err u116))
+(define-constant ERR-NOT-TORSO-OWNER (err u117))
+(define-constant ERR-NOT-LEGS-OWNER (err u118))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -288,6 +290,64 @@
             {
                 head-id: new-head,
                 head-collection: new-head-collection,
+            }
+          )
+        )
+    )
+    )
+)
+
+(define-public (change-avatar-torso (avatar uint) (new-torso-collection (optional principal)) (new-torso (optional uint)))
+    (let
+     
+     (
+      (current-avatar-clothes (unwrap! (map-get? clothes avatar) ERR-UNWRAP))
+     )
+     ;; asserts the owner of the avatar
+     (asserts! (is-eq (some tx-sender) (unwrap! (get-owner avatar) ERR-UNWRAP-AVATAR)) ERR-NOT-AUTH)
+
+     ;; asserts the owner of the Head
+     (asserts! (is-eq (some tx-sender) (unwrap-panic (contract-call? .hardware-top-example get-owner (unwrap-panic new-torso)))) ERR-NOT-TORSO-OWNER)
+     
+     ;; asserts that the collection can be used to dress
+     (asserts! (is-some (index-of (var-get clothe-collections) (unwrap-panic new-torso-collection))) ERR-NOT-DRESSING)
+      
+      ;;sets the map for the avatar
+    (ok (map-set clothes avatar
+          (merge 
+            current-avatar-clothes
+            {
+                torso-id: new-torso,
+                torso-collection: new-torso-collection,
+            }
+          )
+        )
+    )
+    )
+)
+
+(define-public (change-avatar-legs (avatar uint) (new-legs-collection (optional principal)) (new-legs (optional uint)))
+    (let
+     
+     (
+      (current-avatar-clothes (unwrap! (map-get? clothes avatar) ERR-UNWRAP))
+     )
+     ;; asserts the owner of the avatar
+     (asserts! (is-eq (some tx-sender) (unwrap! (get-owner avatar) ERR-UNWRAP-AVATAR)) ERR-NOT-AUTH)
+
+     ;; asserts the owner of the Head
+     (asserts! (is-eq (some tx-sender) (unwrap-panic (contract-call? .hardware-top-example get-owner (unwrap-panic new-legs)))) ERR-NOT-LEGS-OWNER)
+     
+     ;; asserts that the collection can be used to dress
+     (asserts! (is-some (index-of (var-get clothe-collections) (unwrap-panic new-legs-collection))) ERR-NOT-DRESSING)
+      
+      ;;sets the map for the avatar
+    (ok (map-set clothes avatar
+          (merge 
+            current-avatar-clothes
+            {
+                legs-id: new-legs,
+                legs-collection: new-legs-collection,
             }
           )
         )
