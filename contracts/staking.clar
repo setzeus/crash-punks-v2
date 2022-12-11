@@ -24,6 +24,8 @@
 
 ;; @desc - List of principals that represents all whitelisted, actively-staking collections
 (define-data-var whitelist-collections (list 100 principal) (list))
+(define-data-var custodial-whitelist-collections (list 100 principal) (list))
+(define-data-var non-custodial-whitelist-collections (list 100 principal) (list))
 
 ;; @desc - Uint that represents that *max* possible stake reward per block (a multiplier of u100)
 (define-data-var max-payout-per-block uint u1000000)
@@ -47,8 +49,7 @@
 (define-map collection-multiplier principal uint)
 
 ;; @desc - List of principals that are whitelisted/have admin privileges
-(define-data-var whitelist-admins (list 100 principal) (list))
-(append (var-get whitelist-admins) tx-sender)
+(define-data-var whitelist-admins (list 100 principal) (list tx-sender))
 
 ;; @desc - Map that tracks of a staked item details (value) by collection & ID (key)
 (define-map staked-item {collection: principal, id: uint}
@@ -283,6 +284,7 @@
       (is-unstaked-in-staked-by-user-list (index-of (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: (contract-of collection)})) id))
       (is-unstaked-in-stake-details-map (get status (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (var-get helper-collection-principal), id: id}))))
       (current-nft-owner (unwrap-panic (contract-call? collection get-owner id)))
+      (custodial-list (var-get custodial-whitelist-collections))
     )
 
     ;; Assert collection is whitelisted
@@ -294,8 +296,14 @@
     ;; Asserts item is unstaked across all necessary storage
     (asserts! (and (is-none is-unstaked-in-all-staked-ids-list) (is-none is-unstaked-in-staked-by-user-list) (not is-unstaked-in-stake-details-map)) ERR-STAKED-OR-NONE)
 
-    ;; need to take care of manual staking for stacculents & spooky staccs
+    ;; manual staking for custodial
+    (if
+        (is-some (index-of custodial-list (contract-of collection)))
+        
+        (unwrap! (contract-call? collection transfer id tx-sender (as-contract tx-sender)) (err u401))
 
+        false
+      )
 
     ;; Var set all staked ids list
     (map-set all-stakes-in-collection (contract-of collection)
@@ -368,7 +376,7 @@
 (define-public (claim-collection-stake (collection-collective <nft-trait>))
   (let
     (
-      (unclaimed-balance-by-collection (unwrap! (get-unclaimed-balance-by-collection collection-collective) ERR-UNWRAP))
+      (unclaimed-balance-by-collection (unwrap! (get-unclaimed-balance-by-collection collection-collective) ERR-UNWRAP-GET-UNCLAIMED-BALANCE-BY-COLLECTION))
     )
 
     ;; contract call to mint for X amount
@@ -453,6 +461,7 @@
       (blocks-staked (- block-height last-claimed-or-staked-height))
       (current-all-staked-in-collection-list (default-to (list) (map-get? all-stakes-in-collection (contract-of collection))))
       (current-user-staked-by-collection-list (default-to (list) (map-get? user-stakes-by-collection {user: tx-sender, collection: (contract-of collection)})))
+      (custodial-list (var-get custodial-whitelist-collections))
     )
 
     ;; asserts is staked
@@ -470,6 +479,15 @@
       ;; if not, proceed
       true
     )
+
+    ;;manual unstake of custodial
+    (if
+        (is-some (index-of custodial-list (contract-of collection)))
+        
+        (unwrap! (contract-call? collection transfer staked-id (as-contract tx-sender) tx-sender) (err u401))
+
+        true
+      )
 
     ;; Set helper id for removal in filters below
     (var-set id-being-removed staked-id)
@@ -503,17 +521,18 @@
 
 ;; @desc - Function that only an admin user can call to add a new SGC collection for staking
 ;; @param - Collection (principal or collection?), Collection-Multiple (uint)
-(define-public (admin-add-new-collection (collection <nft-trait>) (collection-multiple uint))
+(define-public (admin-add-new-custodial-collection (collection <nft-trait>) (collection-multiple uint))
   (let
     (
-      (active-whitelist (var-get whitelist-collections))
+      (active-whitelist (var-get custodial-whitelist-collections))
+      (all-whitelist (var-get whitelist-collections))
     )
 
     ;;(asserts! (is-some (index-of (var-get whitelist-admins) tx-sender)) (err u40))
     (asserts! (is-eq tx-sender admin-one) ERR-NOT-AUTH)
 
     ;; assert collection not already added
-    (asserts! (is-none (index-of active-whitelist (contract-of collection))) ERR-ALREADY-WHITELISTED)
+    (asserts! (is-none (index-of all-whitelist (contract-of collection))) ERR-ALREADY-WHITELISTED)
 
     ;; assert multiple < 100
     (asserts! (and (< collection-multiple u101) (> collection-multiple u0)) ERR-MULTIPLIER)
@@ -522,8 +541,41 @@
     (map-set collection-multiplier (contract-of collection) collection-multiple)
 
     ;; add new principle to whitelist
-    (ok (var-set whitelist-collections (unwrap! (as-max-len? (append active-whitelist (contract-of collection)) u100) ERR-UNWRAP) ))
+   (ok 
+      (begin
+        (var-set custodial-whitelist-collections (unwrap! (as-max-len? (append active-whitelist (contract-of collection)) u100) ERR-UNWRAP))
+        (var-set whitelist-collections (unwrap! (as-max-len? (append all-whitelist (contract-of collection)) u100) ERR-UNWRAP))
+      )
+    )
+  )
+)
 
+(define-public (admin-add-new-non-custodial-collection (collection <nft-trait>) (collection-multiple uint))
+  (let
+    (
+      (active-whitelist (var-get non-custodial-whitelist-collections))
+      (all-whitelist (var-get whitelist-collections))
+    )
+
+    ;;(asserts! (is-some (index-of (var-get whitelist-admins) tx-sender)) (err u40))
+    (asserts! (is-eq tx-sender admin-one) ERR-NOT-AUTH)
+
+    ;; assert collection not already added
+    (asserts! (is-none (index-of all-whitelist (contract-of collection))) ERR-ALREADY-WHITELISTED)
+
+    ;; assert multiple < 100
+    (asserts! (and (< collection-multiple u101) (> collection-multiple u0)) ERR-MULTIPLIER)
+
+    ;; update collection-multiplier map
+    (map-set collection-multiplier (contract-of collection) collection-multiple)
+
+    ;; add new principle to whitelist
+    (ok 
+      (begin
+        (var-set non-custodial-whitelist-collections (unwrap! (as-max-len? (append active-whitelist (contract-of collection)) u100) ERR-UNWRAP))
+        (var-set whitelist-collections (unwrap! (as-max-len? (append all-whitelist (contract-of collection)) u100) ERR-UNWRAP))
+      )
+    )
   )
 )
 
