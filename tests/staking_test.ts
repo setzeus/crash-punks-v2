@@ -74,6 +74,7 @@ Clarinet.test({
     name: "get-total-generation",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const deployer = accounts.get("deployer")!;
+
         const call = chain.callReadOnlyFn("staking", "get-total-generation", [], deployer.address)
 
         call.result.expectOk().expectUint(0)
@@ -159,6 +160,7 @@ Clarinet.test({
     name: "get-unclaimed-balance",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const deployer = accounts.get("deployer")!;
+
         const call = chain.callReadOnlyFn("staking", "get-unclaimed-balance", [], deployer.address)
     
         call.result.expectOk().expectUint(0)
@@ -166,9 +168,9 @@ Clarinet.test({
     }
 });
 
-//get-unclaimed-balance-by-collection
+//get-unclaimed-balance-by-collection-non-custodial
 Clarinet.test({
-    name: "get-unclaimed-balance-by-collection",
+    name: "get-unclaimed-balance-by-collection-non-custodial",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const deployer = accounts.get("deployer")!;
 
@@ -191,9 +193,42 @@ Clarinet.test({
     },
 });
 
-//can't-get-unclaimed-balance-by-collection-not-owner
+//get-unclaimed-balance-by-collection-custodial
 Clarinet.test({
-    name: "can`t-get-unclaimed-balance-by-collection-not-owner",
+    name: "get-unclaimed-balance-by-collection-custodial",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+
+        chain.mineBlock([
+            Tx.contractCall("punks", "set-approved-all", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.staking"),types.bool(true)], deployer.address)
+        ]);
+
+        chain.mineBlock([
+            Tx.contractCall("staking", "admin-add-new-custodial-collection", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(10)], deployer.address)
+        ]);
+
+        chain.mineBlock([
+            Tx.contractCall("punks", "set-mint-pass", [types.principal(deployer.address),types.uint(1)], deployer.address)
+        ]);
+
+        chain.mineBlock([
+            Tx.contractCall("punks", "mint-token", [], deployer.address)
+        ]);
+
+        chain.mineBlock([
+            Tx.contractCall("staking", "stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(1)], deployer.address)
+        ]);
+       
+        const call = chain.callReadOnlyFn("staking", "get-unclaimed-balance-by-collection", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks")], deployer.address)
+    
+        call.result.expectOk().expectUint(0)
+        console.log(JSON.stringify(call.result));
+    },
+});
+
+//can't-get-unclaimed-balance-by-collection-if-nothing-staked
+Clarinet.test({
+    name: "can`t-get-unclaimed-balance-by-collection-if-nothing-staked",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const deployer = accounts.get("deployer")!;
        
@@ -209,6 +244,7 @@ Clarinet.test({
     name: "stake-non-custodial",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const deployer = accounts.get("deployer")!;
+        const wallet_4 = accounts.get("wallet_4")!;
 
         chain.mineBlock([
             Tx.contractCall("staking", "admin-add-new-non-custodial-collection", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.hardware-top-example"),types.uint(10)], deployer.address)
@@ -228,6 +264,36 @@ Clarinet.test({
 });
 
 //stake-custodial
+Clarinet.test({
+    name: "stake-custodial",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+        const wallet_4 = accounts.get("wallet_4")!;
+
+        chain.mineBlock([
+            Tx.contractCall("punks", "set-approved-all", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.staking"),types.bool(true)], deployer.address)
+        ]);
+        
+        chain.mineBlock([
+            Tx.contractCall("staking", "admin-add-new-custodial-collection", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(10)], deployer.address)
+        ]);
+
+        chain.mineBlock([
+            Tx.contractCall("punks", "set-mint-pass", [types.principal(wallet_4.address),types.uint(1)], deployer.address)
+        ]);
+        
+        chain.mineBlock([
+            Tx.contractCall("punks", "mint-token", [], wallet_4.address)
+        ]);
+
+        const block = chain.mineBlock([
+            Tx.contractCall("staking", "stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(1)], wallet_4.address)
+        ]);
+    
+        block.receipts[0].result.expectOk().expectBool(true)
+        console.log(JSON.stringify(block.receipts));
+    },
+});
 
 //stake a not whitelisted collection
 Clarinet.test({
@@ -300,9 +366,9 @@ Clarinet.test({
     },
 });
 
-//claim-item-stake
+//claim-item-stake-non-custodial
 Clarinet.test({
-    name: "claim-item-stake",
+    name: "claim-item-stake-non-custodial",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const deployer = accounts.get("deployer")!;
         const wallet_4 = accounts.get("wallet_4")!;
@@ -323,6 +389,44 @@ Clarinet.test({
 
         const block = chain.mineBlock([
             Tx.contractCall("staking", "claim-item-stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.hardware-top-example"),types.uint(1)], deployer.address)
+        ]);
+    
+        block.receipts[0].result.expectOk().expectBool(true);
+        console.log(JSON.stringify(block.receipts));
+    },
+});
+
+//claim-item-stake-custodial
+Clarinet.test({
+    name: "claim-item-stake-custodial",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+        const wallet_4 = accounts.get("wallet_4")!;
+
+        chain.mineBlock([
+            Tx.contractCall("punks", "set-approved-all", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.staking"),types.bool(true)], deployer.address)
+        ]);
+        
+        chain.mineBlock([
+            Tx.contractCall("punks", "set-mint-pass", [types.principal(deployer.address),types.uint(1)], deployer.address)
+        ]);
+        
+        chain.mineBlock([
+            Tx.contractCall("punks", "mint-token", [], deployer.address)
+        ]);
+
+        chain.mineBlock([
+            Tx.contractCall("staking", "admin-add-new-custodial-collection", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(1)], deployer.address)
+        ]);  
+        
+        chain.mineBlock([
+            Tx.contractCall("staking", "stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(1)], deployer.address)
+        ])
+
+        chain.mineEmptyBlockUntil(1000);
+
+        const block = chain.mineBlock([
+            Tx.contractCall("staking", "claim-item-stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(1)], deployer.address)
         ]);
     
         block.receipts[0].result.expectOk().expectBool(true);
@@ -480,33 +584,29 @@ Clarinet.test({
         const wallet_4 = accounts.get("wallet_4")!;
 
         chain.mineBlock([
-            Tx.contractCall("hardware-top-example", "mint-top-hw", [], deployer.address)
+            Tx.contractCall("hardware-top-example", "mint-top-hw", [], wallet_4.address)
         ]);
 
         chain.mineBlock([
-            Tx.contractCall("hardware-top-example", "mint-top-hw", [], deployer.address)
+            Tx.contractCall("hardware-top-example", "mint-top-hw", [], wallet_4.address)
         ]);
 
         chain.mineBlock([
             Tx.contractCall("staking", "admin-add-new-non-custodial-collection", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.hardware-top-example"),types.uint(1)], deployer.address)
         ]);  
-        
-        chain.mineBlock([
-            Tx.contractCall("staking", "admin-add-new-non-custodial-collection", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.hardware-top-example"),types.uint(2)], deployer.address)
-        ]); 
 
         chain.mineBlock([
-            Tx.contractCall("staking", "stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.hardware-top-example"),types.uint(1)], deployer.address)
+            Tx.contractCall("staking", "stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.hardware-top-example"),types.uint(1)], wallet_4.address)
         ])
 
         chain.mineBlock([
-            Tx.contractCall("staking", "stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.hardware-top-example"),types.uint(2)], deployer.address)
+            Tx.contractCall("staking", "stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.hardware-top-example"),types.uint(2)], wallet_4.address)
         ])
 
         chain.mineEmptyBlockUntil(1000);
 
         const block = chain.mineBlock([
-            Tx.contractCall("staking", "claim-all-stake", [], deployer.address)
+            Tx.contractCall("staking", "claim-all-stake", [], wallet_4.address)
         ]);
     
         block.receipts[0].result.expectOk();
@@ -572,6 +672,42 @@ Clarinet.test({
 
         const block = chain.mineBlock([
             Tx.contractCall("staking", "unstake-item", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.hardware-top-example"),types.uint(1)], deployer.address)
+        ]);
+    
+        block.receipts[0].result.expectOk().expectBool(true)
+        console.log(JSON.stringify(block.receipts));
+    },
+});
+
+//unstake-custodial
+Clarinet.test({
+    name: "unstake-custodial",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+        const wallet_4 = accounts.get("wallet_4")!;
+
+        chain.mineBlock([
+            Tx.contractCall("punks", "set-approved-all", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.staking"),types.bool(true)], deployer.address)
+        ]);
+
+        chain.mineBlock([
+            Tx.contractCall("staking", "admin-add-new-custodial-collection", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(10)], deployer.address)
+        ]);
+
+        chain.mineBlock([
+            Tx.contractCall("punks", "set-mint-pass", [types.principal(wallet_4.address),types.uint(1)], deployer.address)
+        ]);
+        
+        chain.mineBlock([
+            Tx.contractCall("punks", "mint-token", [], wallet_4.address)
+        ]);
+
+        chain.mineBlock([
+            Tx.contractCall("staking", "stake", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(1)], wallet_4.address)
+        ]);
+
+        const block = chain.mineBlock([
+            Tx.contractCall("staking", "unstake-item", [types.principal("ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.punks"),types.uint(1)], wallet_4.address)
         ]);
     
         block.receipts[0].result.expectOk().expectBool(true)

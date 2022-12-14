@@ -11,7 +11,7 @@
 
 
 ;; TODO: MAKE SURE THIS MINT COUNTER IS CORRECT. SHOULD BE THE MINT-COUNTER FROM V1. DOUBLE CHECK IF OFF BY 1 ERROR
-(define-data-var mint-counter uint u5721)
+(define-data-var mint-counter uint u1)
 
 ;; addresses to receive mint fee
 (define-data-var collection-mint-addresses (list 4 principal) (list))
@@ -88,10 +88,15 @@
 
 ;; SIP-09: Transfer
 (define-public (transfer (id uint) (owner principal) (recipient principal))
+
     (begin
+
         (asserts! (unwrap! (is-approved id contract-caller) ERR-NOT-AUTHORIZED) ERR-NOT-AUTHORIZED)
+
         (asserts! (is-none (map-get? market id)) ERR-NFT-LISTED)
+
         (nft-transfer? crashpunks-v2 id owner recipient)
+
     )
 )
 
@@ -303,4 +308,3 @@
 )
 
 ;; TODO: add all whitelists
-(map-set mint-pass 'SP3BTM84FYABJGJ83519GG5NSV0A6A13D4NHJSS32 u2)

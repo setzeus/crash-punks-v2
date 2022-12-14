@@ -22,6 +22,8 @@
 
 (define-constant admin-one tx-sender)
 
+(define-data-var function-caller principal tx-sender)
+
 ;; @desc - List of principals that represents all whitelisted, actively-staking collections
 (define-data-var whitelist-collections (list 100 principal) (list))
 (define-data-var custodial-whitelist-collections (list 100 principal) (list))
@@ -88,6 +90,7 @@
 (define-constant ERR-ALREADY-WHITELISTED (err u114))
 (define-constant ERR-MULTIPLIER (err u115))
 (define-constant ERR-UNWRAP-GET-UNCLAIMED-BALANCE-BY-COLLECTION (err u116))
+(define-constant ERR-UNWRAP-SET-APPROVED (err u117))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -98,6 +101,10 @@
 
 (define-read-only (active-collections)
   (var-get whitelist-collections)
+)
+
+(define-read-only (custodial-active-collections)
+  (var-get custodial-whitelist-collections)
 )
 
 ;; @desc - Read function that returns the current generation rate for tx-sender across all actively staked collective assets
@@ -296,14 +303,14 @@
     ;; Asserts item is unstaked across all necessary storage
     (asserts! (and (is-none is-unstaked-in-all-staked-ids-list) (is-none is-unstaked-in-staked-by-user-list) (not is-unstaked-in-stake-details-map)) ERR-STAKED-OR-NONE)
 
+    (unwrap! (contract-call? .punks set-approved-all .staking true) ERR-UNWRAP-SET-APPROVED)
+
     ;; manual staking for custodial
     (if
         (is-some (index-of custodial-list (contract-of collection)))
-        
-        (unwrap! (contract-call? collection transfer id tx-sender (as-contract tx-sender)) (err u401))
-
+        (unwrap! (contract-call? collection transfer id tx-sender .staking) (err u401))
         false
-      )
+    )
 
     ;; Var set all staked ids list
     (map-set all-stakes-in-collection (contract-of collection)
@@ -325,7 +332,6 @@
     ))
   )
 )
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -353,7 +359,7 @@
     (asserts! stake-status ERR-NOT-STAKED)
 
     ;; asserts tx-sender is owner && asserts tx-sender is staker
-    (asserts! (and (is-eq tx-sender current-staker) (is-eq (some tx-sender) current-nft-owner)) ERR-NOT-OWNER)
+    (asserts! (is-eq tx-sender current-staker) ERR-NOT-OWNER)
 
     ;; asserts height-difference > 0
     (asserts! (> blocks-staked u0) ERR-MIN-STAKE-HEIGHT)
@@ -468,7 +474,7 @@
     (asserts! stake-status ERR-NOT-STAKED)
 
     ;; asserts tx-sender is owner && asserts tx-sender is staker
-    (asserts! (and (is-eq tx-sender current-staker) (is-eq (some tx-sender) current-nft-owner)) ERR-NOT-OWNER)
+    (asserts! (is-eq tx-sender current-staker) ERR-NOT-OWNER)
 
     ;; check if blocks-staked > 0 to see if there's any unclaimed $SNOW to claim
     (if (> blocks-staked u0)
@@ -480,14 +486,15 @@
       true
     )
 
+    (var-set function-caller tx-sender)
     ;;manual unstake of custodial
     (if
         (is-some (index-of custodial-list (contract-of collection)))
         
-        (unwrap! (contract-call? collection transfer staked-id (as-contract tx-sender) tx-sender) (err u401))
+        (as-contract (unwrap! (contract-call? collection transfer staked-id .staking (var-get function-caller)) (err u401)))
 
         true
-      )
+    )
 
     ;; Set helper id for removal in filters below
     (var-set id-being-removed staked-id)
@@ -687,5 +694,20 @@
       (var-set token-max-supply (some new-token-max-supply))
       new-token-max-supply
     )
+  )
+)
+
+
+;; test
+
+(define-public (transfer (sender principal) (recipient principal) (id uint))
+  (let
+    (
+      (is-unstaked-in-stake-details-map (get status (default-to {status: false, last-staked-or-claimed: block-height, staker: tx-sender} (map-get? staked-item {collection: (var-get helper-collection-principal), id: id}))))
+      (custodial-list (var-get custodial-whitelist-collections))
+    )
+        
+      (as-contract (unwrap! (contract-call? .punks transfer id sender recipient) (err u401)))
+    (ok true)
   )
 )
